@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import worker from '../worker/index.js';
+const env={STRIPE_SECRET_KEY:'sk_test_example123',SERVICE_TEST_MODE_ENABLED:'true'};
+const headers={Origin:'https://example.test','Content-Type':'application/json','CF-Connecting-IP':'192.0.2.5'};
+const submit=country=>new Request('https://example.test/api/checkout',{method:'POST',headers,body:JSON.stringify({idea:'A small local gardening service.',ad_budget_yen:1000,ad_country:country})});
+const original=globalThis.fetch;let country;
+globalThis.fetch=async (_url,options)=>{country=new URLSearchParams(options.body).get('metadata[ad_country]');return Response.json({url:'https://checkout.stripe.com/c/pay/test'})};
+let r=await worker.fetch(submit('AU'),env);assert.equal(r.status,200);assert.equal(country,'AU');
+r=await worker.fetch(submit('ZZ'),env);assert.equal(r.status,400);
+r=await worker.fetch(submit(undefined),env);assert.equal(r.status,400);
+const page=await (await worker.fetch(new Request('https://example.test/'),env)).text();assert.match(page,/<option value="AU">オーストラリア<\/option>/);assert.match(page,/<option value="JP" selected>日本<\/option>/);
+for(const m of page.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new Function(m[1]));
+globalThis.fetch=original;console.log('Country selection, validation and checkout metadata passed.');

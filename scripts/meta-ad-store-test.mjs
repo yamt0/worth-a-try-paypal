@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {createLaunchStore, submissionState} from '../worker/meta-ad-store.mjs';
+import {readFileSync} from 'node:fs';
+const db0=new DatabaseSync(':memory:');db0.exec(readFileSync('drizzle/0005_meta_ad_launches.sql','utf8'));
+const db={prepare(sql){return {bind(...values){const stmt=db0.prepare(sql);return {async run(){return {meta:{changes:Number(stmt.run(...values).changes)}}},async first(){return stmt.get(...values)||null}}}}}};
+let clock=100000;const first=createLaunchStore(db,{owner:'owner-one',now:()=>clock,leaseMs:120000});const second=createLaunchStore(db,{owner:'owner-two',now:()=>clock,leaseMs:120000});
+assert.equal(await first.acquire('campaign'),true);assert.equal(await second.acquire('campaign'),false);
+await first.begin('campaign','campaign');assert.equal((await first.load('campaign')).pending,'campaign');
+await first.finish('campaign','campaign','123456');assert.equal((await first.load('campaign')).campaign,'123456');
+await first.begin('campaign','adset');await first.release('campaign');assert.equal(await second.acquire('campaign'),true);assert.equal((await second.load('campaign')).pending,'adset');await assert.rejects(second.begin('campaign','creative'));
+await second.release('campaign');assert.equal(await first.acquire('campaign'),true);await assert.rejects(first.finish('campaign','wrong','1'));
+assert.equal(submissionState(null),'not_started');
+assert.equal(submissionState({state:'{}',pending:'adset',error_code:null,updated_at:100000},219999),'preparing');
+assert.equal(submissionState({state:'{}',pending:'adset',error_code:null,updated_at:100000},220001),'needs_attention');
+assert.equal(submissionState({state:'{"campaign_active":true}',pending:null,error_code:null,updated_at:100000},220001),'submitted_for_review');
+console.log('Persistent job locking, checkpoint recovery, and uncertain-outcome protection passed.');

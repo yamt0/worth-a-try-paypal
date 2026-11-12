@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {createHash} from 'node:crypto';
+import worker from '../worker/index.js';
+const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE idea_previews(id TEXT PRIMARY KEY, owner_hash TEXT, owner_email TEXT, owner_email_verified INTEGER DEFAULT 0, owner_email_verify_hash TEXT, owner_email_verify_until INTEGER, page_views INTEGER DEFAULT 0); CREATE TABLE preview_signups(preview_id TEXT,email TEXT,created_at TEXT,PRIMARY KEY(preview_id,email));');
+const DB={prepare(sql){return {bind(...args){const st=db.prepare(sql);return {async first(){return st.get(...args)||null},async run(){return {meta:{changes:Number(st.run(...args).changes)}}},async all(){return {results:st.all(...args)}}}}}}};
+const id='11111111-1111-4111-8111-111111111111',token='a'.repeat(64), hash=createHash('sha256').update(token).digest('hex');db.prepare('INSERT INTO idea_previews(id,owner_hash) VALUES(?,?)').run(id,hash);
+const env={DB,RESEND_API_KEY:'fake',NOTIFICATION_FROM:'Example <a@example.test>'};let messages=[];const previous=globalThis.fetch;globalThis.fetch=async(url,options)=>{messages.push(JSON.parse(options.body));return Response.json({id:'fake'})};
+const contact=()=>new Request('https://example.test/api/preview-contact',{method:'POST',headers:{Origin:'https://example.test','Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({id,email:'owner@example.test'})});
+assert.equal((await worker.fetch(contact(),env)).status,200);assert.equal(messages.length,1);assert.deepEqual(messages[0].to,['owner@example.test']);assert.doesNotMatch(messages[0].text,/manage#|結果確認ページ/);assert.match(messages[0].text,/LPの下部/);const link=messages[0].text.match(/https:\/\/\S+/)[0];
+const signup=()=>new Request('https://example.test/api/preview-signup',{method:'POST',headers:{Origin:'https://example.test','Content-Type':'application/json'},body:JSON.stringify({id,email:'person@example.test'})});
+assert.equal((await worker.fetch(signup(),env)).status,200);assert.equal(messages.length,1);
+assert.equal((await worker.fetch(new Request(link),env)).status,200);assert.equal((await worker.fetch(new Request(link,{method:'POST',headers:{Origin:'null'}}),env)).status,200);
+const signup2=new Request('https://example.test/api/preview-signup',{method:'POST',headers:{Origin:'https://example.test','Content-Type':'application/json'},body:JSON.stringify({id,email:'another@example.test'})});assert.equal((await worker.fetch(signup2,env)).status,200);assert.equal(messages.length,1);
+assert.equal((await worker.fetch(new Request(link,{method:'POST',headers:{Origin:'https://example.test'}}),env)).status,400);globalThis.fetch=previous;console.log('Verification and isolated waitlist notification passed.');

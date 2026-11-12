@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {prepareInstagramCampaign} from '../worker/meta-ad-plan.mjs';
+const input={accountId:'1404592197968750',pageId:'1298247146714548',instagramId:'17841423915509971',previewId:'11111111-1111-4111-8111-111111111111',country:'AU',advertisingBudgetYen:1000,accountCurrency:'JPY',accountBudgetMinor:1000,adText:'Join the waitlist',specialCategories:[],startAt:'2026-11-06T00:00:00.000Z'};
+const plan=prepareInstagramCampaign(input);
+assert.equal(plan.campaign.status,'PAUSED');assert.equal(plan.ad.status,'PAUSED');
+assert.deepEqual(plan.adSet.targeting.publisher_platforms,['instagram']);assert.equal(plan.adSet.lifetime_budget,1000);assert.equal(plan.adSet.end_time,'2026-11-08T00:00:00.000Z');
+assert.match(plan.creative.object_story_spec.link_data.link,/^https:\/\/worthatry\.everyonesai\.org\/preview\//);
+assert.throws(()=>prepareInstagramCampaign({...input,accountCurrency:'USD'}),/currency/);
+assert.throws(()=>prepareInstagramCampaign({...input,accountBudgetMinor:1001}),/currency/);
+assert.throws(()=>prepareInstagramCampaign({...input,advertisingBudgetYen:1001,accountBudgetMinor:1001}),/budget/);
+assert.throws(()=>prepareInstagramCampaign({...input,country:'AUS'}),/country/);
+assert.throws(()=>prepareInstagramCampaign({...input,specialCategories:['UNSUPPORTED']}),/categories/);
+assert.throws(()=>prepareInstagramCampaign({...input,previewId:'../other'}),/landing page/);
+console.log('Draft Instagram campaign parameters and budget checks passed. No ad submitted.');
